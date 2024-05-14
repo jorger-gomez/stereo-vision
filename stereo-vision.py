@@ -1,6 +1,8 @@
 """ HW11 - Sparse 3D reconstruction using stereo vision
     
-    description
+    This Script loads a pair of rectified infrared images, then allows you to select
+    up to 30 pixels in each of them to calculate their 3D position using the camera calibration parameters
+    and some formulas related with Stereo Vision.
 
     Authors: Jorge Rodrigo Gómez Mayo 
     Contact: jorger.gomez@udem.edu
@@ -18,7 +20,6 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import json
 
-
 def parse_user_data() -> tuple[str, str]:
     """
     Parse the command-line arguments provided by the user.
@@ -27,7 +28,7 @@ def parse_user_data() -> tuple[str, str]:
         tuple[str, str]: A tuple containing the path to the object image and the input image.
     """
     parser = argparse.ArgumentParser(prog='HW11 - Sparse 3D reconstruction using stereo vision',
-                                    description='txt', 
+                                    description='Select 2D points and generate a basic 3D reconstruction from Stereo Images', 
                                     epilog='JRGM - 2024')
     parser.add_argument('-l_img',
                         '--left_image',
@@ -98,19 +99,50 @@ def load_camera_calibration(path):
         calibration_data = json.load(file)
     return calibration_data
 
+def select_points(image, title='Select points'):
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap='gray')
+    ax.set_title(title)
+    points = np.asarray(plt.ginput(30, timeout=-1))  # Permite seleccionar 30 puntos
+    plt.close(fig)
+    return points
+
+def show_and_select_points(left_image, left_points, right_image):
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    axs[0].imshow(left_image, cmap='gray')
+    axs[0].plot(left_points[:, 0], left_points[:, 1], 'ro', markersize=1.5)
+    axs[0].set_title('Left Image with Selected Points')
+    axs[1].imshow(right_image, cmap='gray')
+    axs[1].set_title('Select points on Right Image')
+    right_points = np.asarray(plt.ginput(30, timeout=-1))  # Selección de puntos en la imagen derecha
+    plt.close(fig)
+    return right_points
+
+def calculate_3d_coordinates(left_pts, right_pts):
+    disparities = left_pts[:, 0] - right_pts[:, 0]
+    Z = np.where(disparities != 0, (f * B) / disparities, np.inf)
+    X = np.where(disparities != 0, (left_pts[:, 0] - cx) * Z / f, 0)
+    Y = np.where(disparities != 0, (left_pts[:, 1] - cy) * Z / f, 0)
+    return np.column_stack((X, Y, Z))
+
 def run_pipeline():
     """
     """
     # Parse user input
-    print("Initializing...", end="\r")
+    print("\nInitializing...", end="\r")
     user_input =  parse_user_data()
+
+    global B 
+    global f 
+    global cx 
+    global cy 
 
     # Loading calibration data
     print("Loading calibration data...", end="\r")
     calibration_data = load_camera_calibration('D:\Rodrigo\Desktop\ITR UDEM\SEM8\VISION_COMPUTACIONAL\TAREA11\calibration-parameters.txt')
 
     # Extraer los parámetros de calibración
-    B = float(calibration_data['baseline'])  # Podemos tomar el valor absoluto por si el signo es incorrecto
+    B = abs(float(calibration_data['baseline']))  # Podemos tomar el valor absoluto por si el signo es incorrecto
     f = float(calibration_data['rectified_fx'])  # Focal length in pixels (assuming fx and fy are the same)
     cx = float(calibration_data['rectified_cx'])  # X-coordinate of the principal point
     cy = float(calibration_data['rectified_cy'])  # Y-coordinate of the principal point
@@ -119,12 +151,12 @@ def run_pipeline():
 
     # Print calibration data
     print("Calibration data loaded:   ")
-    print(f"Baseline (B): {B} mm")
-    print(f"Focal length (f): {f} px")
-    print(f"Principal point X (cx): {cx} px")
-    print(f"Principal point Y (cy): {cy} px")
-    print(f"Image width: {width} px")
-    print(f"Image height: {height} px")
+    print(f" \u2219 Baseline (B): {B} mm")
+    print(f" \u2219 Focal length (f): {f} px")
+    print(f" \u2219 Principal point X (cx): {cx} px")
+    print(f" \u2219 Principal point Y (cy): {cy} px")
+    print(f" \u2219 Image width: {width} px")
+    print(f" \u2219 Image height: {height} px")
 
     l_img = load_image(user_input.left_image)
     r_img = load_image(user_input.right_image)
@@ -134,6 +166,44 @@ def run_pipeline():
 
     close_windows()
 
+    # Selección de puntos en la imagen izquierda
+    left_points = select_points(l_img, 'Select points on Left Image')
+
+    # Mostrar puntos en la imagen izquierda y seleccionar puntos en la derecha
+    right_points = show_and_select_points(l_img, left_points, r_img)
+
+    coordinates_3d = calculate_3d_coordinates(left_points, right_points) # Calcular
+    # coordinates_3d = np.loadtxt('coordinates_3d.csv', delimiter=',', skiprows=1) # Cargar
+
+    # Imprimir las coordenadas calculadas
+    print("\nPoints:")
+    for i, coord in enumerate(coordinates_3d):
+        print(f" \u2219 Point {i+1}: X={coord[0]:.4f}, Y={coord[1]:.4f}, Z={coord[2]:.4f}")
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], coordinates_3d[:, 1])
+    plt.axis('Equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Z')
+    ax.set_zlabel('Y')
+    ax.set_title('3D Reconstruction of Selected Points\n(Camera Axis Reference Orientation)')
+    plt.show()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], -coordinates_3d[:, 1])
+    plt.axis('Equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Z')
+    ax.set_zlabel('Y')
+    ax.set_title('3D Reconstruction of Selected Points\n(Visual Reference Orientation)')
+    plt.show()
+
+    # Save coordinates
+    save_name = #_coordinates_3d.csv'
+    np.savetxt(save_name, coordinates_3d, delimiter=',', header='X,Y,Z', comments='')
+    print("3D Coordinates Saved as",save_name)
 
 if __name__ == "__main__":
     run_pipeline()

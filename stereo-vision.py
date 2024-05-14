@@ -12,20 +12,21 @@
     Usage Examples:
         py .\stereo-vision.py -l_img .\rectified-images\left_infrared_image.png -r_img .\rectified-images\right_infrared_image.png
 """
-# Import std libs
+# Import standard libraries
 import argparse
 import cv2
-import numpy as np
+import json
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import json
+import numpy as np
+import sys
 
 def parse_user_data() -> tuple[str, str]:
     """
-    Parse the command-line arguments provided by the user.
+    Parse command-line arguments to obtain paths to stereo image pair.
 
     Returns:
-        tuple[str, str]: A tuple containing the path to the object image and the input image.
+        tuple[str, str]: Paths to the left and right images.
     """
     parser = argparse.ArgumentParser(prog='HW11 - Sparse 3D reconstruction using stereo vision',
                                     description='Select 2D points and generate a basic 3D reconstruction from Stereo Images', 
@@ -44,18 +45,35 @@ def parse_user_data() -> tuple[str, str]:
     args = parser.parse_args()
     return args
 
-def load_image(filename: str) -> [np.ndarray]:
+def load_image(filename: str) -> np.ndarray:
     """
-    """
-    img = cv2.imread(filename)
-    return img
+    Load an image from the specified file path.
 
-def resize_image(img: np.ndarray, scale=100) -> np.ndarray:
+    Args:
+        filename (str): Path to the image file.
+
+    Returns:
+        np.ndarray: The loaded image as a NumPy array.
+
+    Raises:
+        SystemExit: If the image file cannot be found or read.
     """
-    Resize the image to a specified scale for better visualization.
+    try:
+        img = cv2.imread(filename)
+        if img is None:
+            raise FileNotFoundError(f"File not found or unsupported format: {filename}")
+        return img
+    except Exception as e:
+        print(f"Error loading image: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def resize_image(img: np.ndarray, scale: int = 100) -> np.ndarray:
+    """
+    Resize the image by a specified percentage scale.
 
     Args:
         img (np.ndarray): Image to resize.
+        scale (int): Percentage to scale the image (default 100%).
 
     Returns:
         np.ndarray: Resized image.
@@ -83,71 +101,146 @@ def visualise_image(img: np.ndarray, title: str, scale: int = 100, picture: bool
     cv2.imshow(title, resized)
     if picture:
         cv2.waitKey(0)
-    return None
 
-def close_windows():
+def close_windows() -> None:
     """
-    Close & destroy OpenCV windows
-
-    The Function closes and destroy all cv2 windows that are open.
+    Close and destroy all OpenCV windows.
+    
+    Returns:
+        None
     """
     cv2.destroyAllWindows()
 
-def load_camera_calibration(path):
-    # Leer y parsear el archivo de calibración
-    with open(path, 'r') as file:
-        calibration_data = json.load(file)
-    return calibration_data
+def load_camera_calibration(path: str) -> dict:
+    """
+    Load camera calibration parameters from a file.
 
-def select_points(image, title='Select points'):
+    Args:
+        path (str): Path to the calibration data file.
+
+    Returns:
+        dict: Calibration data parameters.
+
+    Raises:
+        SystemExit: If the calibration file cannot be found or read.
+    """
+    try:
+        with open(path, 'r') as file:
+            calibration_data = json.load(file)
+        return calibration_data
+    except FileNotFoundError:
+        print("Calibration file not found.", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print("Error decoding the calibration file.", file=sys.stderr)
+        sys.exit(1)
+
+def select_points(image: np.ndarray, title: str = 'Select points') -> np.ndarray:
+    """
+    Interactive selection of points on an image displayed.
+
+    Args:
+        image (np.ndarray): Image on which to select points.
+        title (str): Title of the window showing the image.
+
+    Returns:
+        np.ndarray: Array containing selected points.
+    """
     fig, ax = plt.subplots()
     ax.imshow(image, cmap='gray')
     ax.set_title(title)
-    points = np.asarray(plt.ginput(30, timeout=-1))  # Permite seleccionar 30 puntos
+    points = np.asarray(plt.ginput(30, timeout=-1))  # Allow selection of max 30 points 
     plt.close(fig)
     return points
 
-def show_and_select_points(left_image, left_points, right_image):
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-    axs[0].imshow(left_image, cmap='gray')
-    axs[0].plot(left_points[:, 0], left_points[:, 1], 'ro', markersize=1.5)
-    axs[0].set_title('Left Image with Selected Points')
-    axs[1].imshow(right_image, cmap='gray')
-    axs[1].set_title('Select points on Right Image')
-    right_points = np.asarray(plt.ginput(30, timeout=-1))  # Selección de puntos en la imagen derecha
-    plt.close(fig)
-    return right_points
-
-def calculate_3d_coordinates(left_pts, right_pts):
-    disparities = left_pts[:, 0] - right_pts[:, 0]
-    Z = np.where(disparities != 0, (f * B) / disparities, np.inf)
-    X = np.where(disparities != 0, (left_pts[:, 0] - cx) * Z / f, 0)
-    Y = np.where(disparities != 0, (left_pts[:, 1] - cy) * Z / f, 0)
-    return np.column_stack((X, Y, Z))
-
-def run_pipeline():
+def show_and_select_points(left_image: np.ndarray, left_points: np.ndarray, right_image: np.ndarray) -> np.ndarray:
     """
+    Display left and right images side-by-side, show selected points on the left image, and allow point selection on the right image.
+
+    Args:
+        left_image (np.ndarray): The left image of the stereo pair.
+        left_points (np.ndarray): Points selected on the left image.
+        right_image (np.ndarray): The right image of the stereo pair.
+
+    Returns:
+        np.ndarray: Points selected on the right image.
+
+    Raises:
+        ValueError: If the input data is not valid.
     """
-    # Parse user input
+    try:
+        # Validate input types and content
+        if not isinstance(left_image, np.ndarray) or not isinstance(right_image, np.ndarray):
+            raise ValueError("Input images must be numpy arrays.")
+        if left_points.ndim != 2 or left_points.shape[1] != 2:
+            raise ValueError("Left points must be a two-dimensional array with two columns.")
+
+        # Set up the figure and axes for plotting
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+        axs[0].imshow(left_image, cmap='gray')
+        axs[0].plot(left_points[:, 0], left_points[:, 1], 'ro', markersize=1.5)
+        axs[0].set_title('Left Image with Selected Points')
+        axs[1].imshow(right_image, cmap='gray')
+        axs[1].set_title('Select points on Right Image')
+
+        # Interactive point selection on the right image
+        right_points = np.asarray(plt.ginput(30, timeout=-1))  # Allows selecting max 30 points
+        
+        # Close the plotting figure
+        plt.close(fig)
+        
+        if right_points.size == 0:
+            raise ValueError("No points were selected on the right image.")
+        return right_points
+
+    except Exception as e:
+        print(f"Error during point selection: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def calculate_3d_coordinates(left_pts: np.ndarray, right_pts: np.ndarray) -> np.ndarray:
+    """
+    Calculate 3D coordinates based on disparities between corresponding points in stereo images.
+
+    Args:
+        left_pts (np.ndarray): Points from the left image.
+        right_pts (np.ndarray): Corresponding points from the right image.
+
+    Returns:
+        np.ndarray: 3D coordinates of the points.
+
+    Raises:
+        Exception: If there is a failure in calculation.
+    """
+    try:
+        disparities = left_pts[:, 0] - right_pts[:, 0]
+        Z = np.where(disparities != 0, (f * B) / disparities, np.inf)
+        X = np.where(disparities != 0, (left_pts[:, 0] - cx) * Z / f, 0)
+        Y = np.where(disparities != 0, (left_pts[:, 1] - cy) * Z / f, 0)
+        return np.column_stack((X, Y, Z))
+    except Exception as e:
+        print(f"Failed to calculate 3D coordinates: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def run_pipeline() -> None:
+    """
+    Main function to run the stereo vision pipeline, including loading images, calibration, and 3D reconstruction.
+    """
+    # Initialize and parse user input
     print("\nInitializing...", end="\r")
     user_input =  parse_user_data()
 
-    global B 
-    global f 
-    global cx 
-    global cy 
+    # Declare global variables for calibration parameters
+    global B, f, cx, cy  
 
-    # Loading calibration data
+    # Load calibration data
     print("Loading calibration data...", end="\r")
-    calibration_data = load_camera_calibration('D:\Rodrigo\Desktop\ITR UDEM\SEM8\VISION_COMPUTACIONAL\TAREA11\calibration-parameters.txt')
+    calibration_data = load_camera_calibration('calibration-parameters.txt')
 
     # Extraer los parámetros de calibración
-    B = abs(float(calibration_data['baseline']))  # Podemos tomar el valor absoluto por si el signo es incorrecto
+    B = abs(float(calibration_data['baseline']))  # Baseline, using absolute value to correct sign
     f = float(calibration_data['rectified_fx'])  # Focal length in pixels (assuming fx and fy are the same)
     cx = float(calibration_data['rectified_cx'])  # X-coordinate of the principal point
     cy = float(calibration_data['rectified_cy'])  # Y-coordinate of the principal point
-    width = int(calibration_data['rectified_width'])  # Width of the rectified images
-    height = int(calibration_data['rectified_height'])  # Height of the rectified images
 
     # Print calibration data
     print("Calibration data loaded:   ")
@@ -155,55 +248,53 @@ def run_pipeline():
     print(f" \u2219 Focal length (f): {f} px")
     print(f" \u2219 Principal point X (cx): {cx} px")
     print(f" \u2219 Principal point Y (cy): {cy} px")
-    print(f" \u2219 Image width: {width} px")
-    print(f" \u2219 Image height: {height} px")
+    print(f" \u2219 Image width: {int(calibration_data['rectified_width'])} px")
+    print(f" \u2219 Image height: {int(calibration_data['rectified_height'])} px\n")
 
+    # Load images
     l_img = load_image(user_input.left_image)
     r_img = load_image(user_input.right_image)
 
+    # Display images for verification
     visualise_image(l_img,"Left Image")
     visualise_image(r_img,"Right Image")
 
+    # Close OpenCV windows
     close_windows()
 
-    # Selección de puntos en la imagen izquierda
+    # Select points on the left image
     left_points = select_points(l_img, 'Select points on Left Image')
 
-    # Mostrar puntos en la imagen izquierda y seleccionar puntos en la derecha
+    # Show points on the left image and select points on the right image
     right_points = show_and_select_points(l_img, left_points, r_img)
 
-    coordinates_3d = calculate_3d_coordinates(left_points, right_points) # Calcular
-    # coordinates_3d = np.loadtxt('coordinates_3d.csv', delimiter=',', skiprows=1) # Cargar
+    # Calculate 3D coordinates from selected points
+    coordinates_3d = calculate_3d_coordinates(left_points, right_points)
+    # coordinates_3d = np.loadtxt('coordinates_3d.csv', delimiter=',', skiprows=1) # LOAD SAVED DATA
 
-    # Imprimir las coordenadas calculadas
-    print("\nPoints:")
+    # Display the calculated 3D points
+    print("Points:")
     for i, coord in enumerate(coordinates_3d):
-        print(f" \u2219 Point {i+1}: X={coord[0]:.4f}, Y={coord[1]:.4f}, Z={coord[2]:.4f}")
+        print(f" \u2219 Point {i+1:2d}: ({coord[0]:.5f}mm, {coord[1]:.5f}mm, {coord[2]:.5f}mm)")
 
+    # Plot 3D points for visualization
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], coordinates_3d[:, 1])
+    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], coordinates_3d[:, 1], c='purple', edgecolor='black', s=50, alpha=0.6)
     plt.axis('Equal')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Z')
-    ax.set_zlabel('Y')
-    ax.set_title('3D Reconstruction of Selected Points\n(Camera Axis Reference Orientation)')
+    ax.set_xlabel('X (mm)', fontweight='bold')
+    ax.set_ylabel('Z (mm)', fontweight='bold')
+    ax.set_zlabel('Y (mm)', fontweight='bold')
+    ax.set_title('3D Reconstruction of Selected Points', fontsize=14, fontweight='bold')
+    ax.view_init(elev=25, azim=90)
+    ax.grid(False)
+
     plt.show()
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], -coordinates_3d[:, 1])
-    plt.axis('Equal')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Z')
-    ax.set_zlabel('Y')
-    ax.set_title('3D Reconstruction of Selected Points\n(Visual Reference Orientation)')
-    plt.show()
-
-    # Save coordinates
-    save_name = #_coordinates_3d.csv'
+    # Save coordinates. Comment This section to avoid saving data.
+    save_name = '#_coordinates_3d.csv' # Change value to change output file name
     np.savetxt(save_name, coordinates_3d, delimiter=',', header='X,Y,Z', comments='')
-    print("3D Coordinates Saved as",save_name)
+    print("\n3D Coordinates saved as",save_name)
 
 if __name__ == "__main__":
     run_pipeline()

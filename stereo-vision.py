@@ -40,7 +40,7 @@ def parse_user_data() -> tuple[str, str]:
                         '--right_image',
                         type=str,
                         required=True,
-                        help="Path to the left image")
+                        help="Path to the right image")
     
     args = parser.parse_args()
     return args

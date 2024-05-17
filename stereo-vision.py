@@ -270,7 +270,7 @@ def run_pipeline() -> None:
 
     # Calculate 3D coordinates from selected points
     coordinates_3d = calculate_3d_coordinates(left_points, right_points)
-    # coordinates_3d = np.loadtxt('coordinates_3d.csv', delimiter=',', skiprows=1) # LOAD SAVED DATA
+    # coordinates_3d = np.loadtxt('#_coordinates_3d.csv', delimiter=',', skiprows=1) # LOAD SAVED DATA
 
     # Display the calculated 3D points
     print("Points:")
@@ -280,7 +280,7 @@ def run_pipeline() -> None:
     # Plot 3D points for visualization
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], coordinates_3d[:, 1], c='purple', edgecolor='black', s=50, alpha=0.6)
+    ax.scatter(coordinates_3d[:, 0], coordinates_3d[:, 2], -coordinates_3d[:, 1], c='purple', edgecolor='black', s=50, alpha=0.6)
     plt.axis('Equal')
     ax.set_xlabel('X (mm)', fontweight='bold')
     ax.set_ylabel('Z (mm)', fontweight='bold')
@@ -292,7 +292,7 @@ def run_pipeline() -> None:
     plt.show()
 
     # Save coordinates. Comment This section to avoid saving data.
-    save_name = '#_coordinates_3d.csv' # Change value to change output file name
+    save_name = 'book_coordinates_3d.csv' # Change value to change output file name
     np.savetxt(save_name, coordinates_3d, delimiter=',', header='X,Y,Z', comments='')
     print("\n3D Coordinates saved as",save_name)
 
@@ -301,4 +301,9 @@ if __name__ == "__main__":
 
 """
     References:
+    [1]“OpenCV: Epipolar Geometry.” Accessed: May 15, 2024. [Online]. 
+        Available: https://docs.opencv.org/4.x/da/de9/tutorial_py_epipolar_geometry.html
+
+    [2]“OpenCV: Pose Estimation.” Accessed: May 15, 2024. [Online]. 
+        Available: https://docs.opencv.org/4.x/d7/d53/tutorial_py_pose.html  
 """
